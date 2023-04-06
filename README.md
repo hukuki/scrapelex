@@ -1,4 +1,4 @@
-# ScrapeLex : A Scraping Framework for JavaScript 🗃
+# ScrapeLex 🗃 : A Scraping Framework for JavaScript 
 
 ScrapeLex is a scraping framework for legal documents in JavaScript. 
 
