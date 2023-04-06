@@ -1,25 +1,19 @@
-# Document Model
+# ScrapeLex : A Scraping Framework for JavaScript
 
-```json
-{
-    "documentName": "Name of the json file. Must be unique."
-    "createdAt": "The first time this document has been scraped.",
-    "updatedAt": "The last time when this document was updated.",
-    "versions": [
-        {
-            "lastUpdated": "",
-            "createdAt": "",
-            "metadata": {},
-            "files": [
-                {
-                    "content": "base64",
-                    "contentType": "application/bluh-bluh",
-                },
-            ]
-        },
-        {
+ScrapeLex is a scraping framework for legal documents in JavaScript. 
 
-        },
-   ]
-}
+## Installation
+
+```bash
+npm install
 ```
+
+## Usage
+
+```bash
+npm start
+```
+
+## Contributing
+
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
