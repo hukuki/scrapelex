@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+require("dotenv").config();
 
 const uri = process.env.MONGO_DB_URI || "mongodb://localhost:27017/scraper";
 
@@ -12,3 +13,5 @@ connection.once("open", () => {
 connection.once("error", () => {
   console.log("MongoDB database connection failed");
 });
+
+module.exports = connection;
