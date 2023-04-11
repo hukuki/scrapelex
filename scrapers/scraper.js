@@ -1,10 +1,11 @@
-const Document = require('./model/document.js');
-const File = require('./model/file.js');
+const Document = require('../model/document.js');
+const File = require('../model/file.js');
 
 class ScraperWithPagination {
 
-    constructor(url) {
+    constructor(url, folder) {
         this.baseUrl = url;
+        this.folder = folder;
         this.currentPageIndex = 1;
     }
 
@@ -25,10 +26,10 @@ class ScraperWithPagination {
     }
 
     async getDocument(metadata){
-        let document = await Document.findOne({ name: this.parseFileName(metadata) });
+        let document = await Document.findOne({ name: this.parseFileName(metadata), folder: this.folder });
 
         if(!document)
-            document = await Document.create({ name: this.parseFileName(metadata) });
+            document = await Document.create({ name: this.parseFileName(metadata), folder: this.folder });
         
         return document;
     }

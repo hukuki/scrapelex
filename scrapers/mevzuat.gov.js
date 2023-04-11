@@ -1,12 +1,12 @@
 const { ScraperWithPagination } = require('./scraper');
-const File = require('./model/file.js');
+const File = require('../model/file.js');
 const axios = require('axios');
 const cheerio = require('cheerio');
 
 class MevzuatGovScraper extends ScraperWithPagination {
 
     constructor() {
-        super('https://mevzuat.gov.tr/');
+        super('https://mevzuat.gov.tr/', 'mevzuat');
 
         this.pageRequestHeaders = {
             'Content-Type': 'application/json',
@@ -106,4 +106,4 @@ class MevzuatGovScraper extends ScraperWithPagination {
     }
 }
 
-new MevzuatGovScraper().scrape();
+module.exports = { MevzuatGovScraper };

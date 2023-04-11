@@ -9,6 +9,10 @@ const documentSchema = new mongoose.Schema({
         required: true,
         index: true
     },
+    folder: {
+        type: String,
+        required: true
+    },
     sourceLastUpdated: {
         type: Date
     }
