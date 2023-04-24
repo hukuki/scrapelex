@@ -16,7 +16,7 @@ class MevzuatGovScraper extends ScraperWithPagination {
         this.pageRequestUrl = 'https://mevzuat.gov.tr/anasayfa/MevzuatDatatable';
     }
 
-    getPageSize() { return 10; }
+    getPageSize() { return 25; }
     async parsePage(page) { return page; }
 
     async getMaxPageCount() {
@@ -68,9 +68,14 @@ class MevzuatGovScraper extends ScraperWithPagination {
             files.push(this.fileFromResponse(wordResponse, metadata));
         }
 
-        const htmlUrl = this.baseUrl + $('iframe').attr('src').substring(1);
-        const htmlResponse = await axios.get(htmlUrl, requestOptions);
-        files.push(this.fileFromResponse(htmlResponse, metadata, pdfResponse.headers['last-modified']));
+        try{
+            const htmlUrl = this.baseUrl + $('iframe').attr('src').substring(1);
+            const htmlResponse = await axios.get(htmlUrl, requestOptions);
+            files.push(this.fileFromResponse(htmlResponse, metadata, pdfResponse.headers['last-modified']));
+        }catch(e){
+            console.log(e);
+            console.log('No html file found for ' + metadata)
+        }
 
         return files;
     }
@@ -91,14 +96,18 @@ class MevzuatGovScraper extends ScraperWithPagination {
     async saveFile(files, document) {
         if (document.sourceLastUpdated >= files[0].sourceLastUpdated)
             return;
+        try { 
+            for (let file of files) {
+                const fileModel = new File({ ...file, document: document._id });
+                await fileModel.save();
+            }
 
-        for (let file of files) {
-            const fileModel = new File({ ...file, document: document._id });
-            await fileModel.save();
+            document.sourceLastUpdated = files[0].sourceLastUpdated;
+            await document.save();
+        } catch (e) {
+            console.error(e);
+            console.log(files)
         }
-
-        document.sourceLastUpdated = files[0].sourceLastUpdated;
-        await document.save();
     }
 
     fileFromResponse(response, metadata, overrideDate = undefined) {
