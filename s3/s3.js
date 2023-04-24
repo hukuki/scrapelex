@@ -21,7 +21,9 @@ const uploadFile = async (fileName, file) => {
         const results = await s3Client.send(new PutObjectCommand(uploadParams));
         return results;
     } catch (err) {
-        console.log("Error", err);
+        console.log("Error:", err);
+        console.log("Filename:", fileName);
+        console.log("File:", file);
     }
 };
 
