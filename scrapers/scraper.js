@@ -1,6 +1,7 @@
 const Document = require('../model/document.js');
 const File = require('../model/file.js');
 const cliProgress = require('cli-progress');
+const { uploadFile } = require('../s3/s3.js');
 
 class ScraperWithPagination {
 
@@ -27,21 +28,24 @@ class ScraperWithPagination {
     }
 
     async getDocument(metadata){
-        let document = await Document.findOne({ name: this.parseFileName(metadata), folder: this.folder });
+        let document = await Document.findOne({ ...this.parseFileName(metadata), folder: this.folder });
         let isNewDocument = false;
         if(!document) {
             isNewDocument = true;
-            document = await Document.create({ name: this.parseFileName(metadata), folder: this.folder });
+            document = await Document.create({ ...this.parseFileName(metadata), folder: this.folder });
         }
         
         return {document, isNewDocument};
     }
     
-    async saveFile(file, document){
+    async saveFile(file, document, fileContent){
         if (document.sourceLastUpdated >= file.sourceLastUpdated) 
             return;
 
         const fileModel = new File({ ...file, document: document._id });
+        result = await uploadFile(this.folder + '/' + fileModel._id.toString(), fileContent);
+        const isS3Uploaded = result?.$metadata?.httpStatusCode === 200;
+        fileModel.s3Uploaded = isS3Uploaded;
         await fileModel.save(); 
 
         document.sourceLastUpdated = file.sourceLastUpdated;
@@ -54,7 +58,8 @@ class ScraperWithPagination {
     // }
 
 
-    async scrape(update = true) {
+    async scrape(update = true, continueFrom = 1) {
+        this.currentPageIndex = continueFrom;
         const progressBar = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
         this.maxPageCount = await this.getMaxPageCount();
 
@@ -72,14 +77,14 @@ class ScraperWithPagination {
                     return;
                 }
                 // console.log(update, isNewDocument)
-                const file = await this.getFile(metadata);
+                const {file, fileContent} = await this.getFile(metadata);
                 // const document = await this.getDocument(metadata);
                 
-                await this.saveFile(file, document);
+                await this.saveFile(file, document, fileContent);
             });
 
             page = await this.getNextPage();
-            progressBar.increment(this.getPageSize());
+            progressBar.update(this.currentPageIndex * this.getPageSize());
         }
 
         progressBar.stop();

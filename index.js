@@ -2,11 +2,11 @@ const dbConnection = require('./model/db.js');
 
 const { MevzuatGovScraper } = require('./scrapers/mevzuat.gov.js');
 
-const scrape = async (update) => {
-    await new MevzuatGovScraper().scrape(update);
+const scrape = async (update, continueFrom) => {
+    await new MevzuatGovScraper().scrape(update, continueFrom);
 }
 
-scrape(false);
+scrape(false, 270);
 
 // graceful shutdown
 process.on('SIGINT', () => {

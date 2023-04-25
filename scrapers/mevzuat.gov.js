@@ -2,6 +2,8 @@ const { ScraperWithPagination } = require('./scraper');
 const File = require('../model/file.js');
 const axios = require('axios');
 const cheerio = require('cheerio');
+const { uploadFile } = require('../s3/s3.js');
+const { safeReq } = require('../utils.js');
 
 class MevzuatGovScraper extends ScraperWithPagination {
 
@@ -23,7 +25,7 @@ class MevzuatGovScraper extends ScraperWithPagination {
         const headers = this.pageRequestHeaders;
         const body = this.getPageRequestBody(1);
 
-        const response = await axios.post(this.pageRequestUrl, body, { headers });
+        const response = await safeReq(axios.post, [this.pageRequestUrl, body, { headers }]);
         const totalRecords = response.data.recordsTotal;
 
         return parseInt(totalRecords / this.getPageSize());
@@ -33,7 +35,7 @@ class MevzuatGovScraper extends ScraperWithPagination {
         const headers = this.pageRequestHeaders;
         const body = this.getPageRequestBody(pageIndex);
 
-        const response = await axios.post(this.pageRequestUrl, body, { headers });
+        const response = await safeReq(axios.post, [this.pageRequestUrl, body, { headers }]);
 
         return response.data.data;
     }
@@ -43,11 +45,11 @@ class MevzuatGovScraper extends ScraperWithPagination {
         const requestOptions = { responseType: 'arraybuffer' };
 
         if (url.startsWith('http://') || url.startsWith('https://')) {
-            const response = await axios.get(url, requestOptions);
-            return [this.fileFromResponse(response, metadata)];
+            const response = await safeReq(axios.get, [url, requestOptions]);
+            return {file: [this.fileFromResponse(response, metadata)], fileContent: [response.data]};
         }
 
-        const response = await axios.get(this.baseUrl + url);
+        const response = await safeReq(axios.get, [this.baseUrl + url]);
         const html = response.data;
 
         const $ = cheerio.load(html);
@@ -55,34 +57,64 @@ class MevzuatGovScraper extends ScraperWithPagination {
         const word = $('img[src="/img/iconWord.png"]');
 
         const files = [];
+        const fileContents = [];
 
-        const pdfUrl = pdf.parent().attr('href');
-        const pdfResponse = await axios.get(pdfUrl, requestOptions);
-
-        files.push(this.fileFromResponse(pdfResponse, metadata));
-
-        if (word.length > 0) {
-            const wordUrl = word.parent().attr('href');
-            const wordResponse = await axios.get(wordUrl, requestOptions);
-
-            files.push(this.fileFromResponse(wordResponse, metadata));
+        let pdfResponse;
+        if(pdf.length > 0) {
+            const pdfUrl = pdf.parent().attr('href');
+            pdfResponse = await safeReq(axios.get, [pdfUrl, requestOptions] );
         }
 
+        let wordResponse;
+        if (word.length > 0) {
+            const wordUrl = word.parent().attr('href');
+            wordResponse = await safeReq(axios.get, [wordUrl, requestOptions]);
+        }
+
+        let htmlResponse;
         try{
             const htmlUrl = this.baseUrl + $('iframe').attr('src').substring(1);
-            const htmlResponse = await axios.get(htmlUrl, requestOptions);
-            files.push(this.fileFromResponse(htmlResponse, metadata, pdfResponse.headers['last-modified']));
+            htmlResponse = await safeReq(axios.get, [htmlUrl, requestOptions]);
         }catch(e){
             console.log(e);
             console.log('No html file found for ' + metadata)
         }
 
-        return files;
+        let sourceLastUpdated;
+        let noLastUpdated = false;
+        if (pdfResponse.headers['last-modified'] !== undefined) {
+            sourceLastUpdated = new Date(pdfResponse.headers['last-modified']);
+        }
+        else if (wordResponse?.headers['last-modified'] !== undefined) {
+            sourceLastUpdated = new Date(wordResponse.headers['last-modified']);
+        }
+        else {
+            noLastUpdated = true;
+        }
+
+        if(pdfResponse && pdfResponse.headers['content-type'] !== 'text/html; charset=utf-8'){
+            files.push(this.fileFromResponse(pdfResponse, metadata, sourceLastUpdated, noLastUpdated));
+            fileContents.push(pdfResponse.data);
+        }
+        if(wordResponse && wordResponse.headers['content-type'] !== 'text/html; charset=utf-8') {
+            files.push(this.fileFromResponse(wordResponse, metadata, sourceLastUpdated, noLastUpdated));
+            fileContents.push(wordResponse.data);
+        }
+        if(htmlResponse) {
+            files.push(this.fileFromResponse(htmlResponse, metadata, sourceLastUpdated, noLastUpdated));
+            fileContents.push(htmlResponse.data);
+        }
+
+
+        return {file : files, fileContent : fileContents};
     }
 
     parseFileName(metadata) {
-        const { mevzuatTur, mevzuatTertip, mevzuatNo } = metadata;
-        return `${mevzuatTur}_${mevzuatTertip}_${mevzuatNo}`;
+        const { mevzuatTur, mevzuatTertip, mevzuatNo, mevAdi } = metadata;
+        return {
+            "name": `${mevzuatTur}_${mevzuatTertip}_${mevzuatNo}`,
+            "title": mevAdi || "No Title"
+        }
     }
 
     getPageRequestBody(pageIndex) {
@@ -93,13 +125,16 @@ class MevzuatGovScraper extends ScraperWithPagination {
     }
 
     //since for mevzuat we save three different file types, we need to override this method 
-    async saveFile(files, document) {
+    async saveFile(files, document, fileContents) {
         if (document.sourceLastUpdated >= files[0].sourceLastUpdated)
             return;
         try { 
-            for (let file of files) {
+            for (let [index, file] of files.entries()) {
                 const fileModel = new File({ ...file, document: document._id });
-                await fileModel.save();
+                const result = await uploadFile(this.folder + '/' + fileModel._id.toString(), fileContents[index]);
+                const isS3Uploaded = result?.$metadata?.httpStatusCode === 200;
+                fileModel.s3Uploaded = isS3Uploaded;
+                await fileModel.save(); 
             }
 
             document.sourceLastUpdated = files[0].sourceLastUpdated;
@@ -110,8 +145,8 @@ class MevzuatGovScraper extends ScraperWithPagination {
         }
     }
 
-    fileFromResponse(response, metadata, overrideDate = undefined) {
-        return { content: response.data, contentType: response.headers['content-type'], metadata, sourceLastUpdated: new Date(overrideDate || response.headers['last-modified']) };
+    fileFromResponse(response, metadata, Date, noLastUpdated) {
+        return {contentType: response.headers['content-type'], metadata, sourceLastUpdated: Date, noLastUpdated : noLastUpdated};
     }
 }
 
