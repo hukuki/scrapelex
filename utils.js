@@ -44,4 +44,8 @@ async function safeReq(url, params, resType, retryCount = 3, timeout = 20000) {
     }
 }
 
-module.exports = { safeReq };
+async function stopProxyServer(provider) {
+    await fetch(`http://localhost:8000/providers/${provider}?min_scaling=0&max_scaling=0`, { method: 'PATCH', headers: {"accept" : "application/json"}} );
+}
+
+module.exports = { safeReq, stopProxyServer };

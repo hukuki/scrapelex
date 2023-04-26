@@ -1,25 +1,29 @@
 const dbConnection = require('./model/db.js');
-
+const { stopProxyServer } = require('./utils.js');
 const { MevzuatGovScraper } = require('./scrapers/mevzuat.gov.js');
+const { stopProxyServer } = require('./utils.js');
 
 const scrape = async (update, continueFrom) => {
     await new MevzuatGovScraper().scrape(update, continueFrom);
 }
 
-scrape(false, 1).then( () => {
-    console.log("Done");
+const gracefullyExit = (message) => {
+    console.log(message);
     dbConnection.close(false).then( (res) => {
         console.log('Mongoose connection disconnected through app termination');
-        process.exit(0);
+        stopProxyServer("aws").then( () => {
+            console.log("Proxy server stopped");
+            process.exit(0);
+        });
     });
-});
+}
+
+
+scrape(false, 1).then( () => {
+    gracefullyExit("Scraping finished");
+})
 
 // graceful shutdown
 process.on('SIGINT', () => {
-    console.log("Caught interrupt signal");
-    // boolean means [force]
-    dbConnection.close(false).then( (res) => {
-        console.log('Mongoose connection disconnected through app termination');
-        process.exit(0);
-    });
+    gracefullyExit("Caught interrupt signal");
 });
