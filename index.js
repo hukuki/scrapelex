@@ -6,7 +6,13 @@ const scrape = async (update, continueFrom) => {
     await new MevzuatGovScraper().scrape(update, continueFrom);
 }
 
-scrape(false, 270);
+scrape(false, 1).then( () => {
+    console.log("Done");
+    dbConnection.close(false).then( (res) => {
+        console.log('Mongoose connection disconnected through app termination');
+        process.exit(0);
+    });
+});
 
 // graceful shutdown
 process.on('SIGINT', () => {

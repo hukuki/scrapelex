@@ -70,7 +70,7 @@ class ScraperWithPagination {
         while (page) {
             const pageMetadata = await this.parsePage(page);
 
-            pageMetadata.forEach(async (metadata) => {
+            await Promise.all(pageMetadata.map(async (metadata) => {
                 const {document, isNewDocument} = await this.getDocument(metadata);
                 if (!update && !isNewDocument) {
                     console.log(`Skipping ${this.parseFileName(metadata)}...`);
@@ -81,7 +81,7 @@ class ScraperWithPagination {
                 // const document = await this.getDocument(metadata);
                 
                 await this.saveFile(file, document, fileContent);
-            });
+            }));
 
             page = await this.getNextPage();
             progressBar.update(this.currentPageIndex * this.getPageSize());

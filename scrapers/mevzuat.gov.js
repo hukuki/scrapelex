@@ -25,31 +25,32 @@ class MevzuatGovScraper extends ScraperWithPagination {
         const headers = this.pageRequestHeaders;
         const body = this.getPageRequestBody(1);
 
-        const response = await safeReq(axios.post, [this.pageRequestUrl, body, { headers }]);
+        const response = await safeReq(this.pageRequestUrl, { method: 'POST', body: JSON.stringify(body), headers}, 'json');
+        //console.log("response", await response.text());
         const totalRecords = response.data.recordsTotal;
 
-        return parseInt(totalRecords / this.getPageSize());
+        return parseInt(Math.ceil(totalRecords / this.getPageSize()));
     }
 
     async getPage(pageIndex) {
         const headers = this.pageRequestHeaders;
         const body = this.getPageRequestBody(pageIndex);
 
-        const response = await safeReq(axios.post, [this.pageRequestUrl, body, { headers }]);
+        const response = await safeReq(this.pageRequestUrl, { method: 'POST', body: JSON.stringify(body), headers}, 'json');
 
         return response.data.data;
     }
 
     async getFile(metadata) {
         const url = metadata.url;
-        const requestOptions = { responseType: 'arraybuffer' };
+        // const requestOptions = { responseType: 'arraybuffer' };
 
         if (url.startsWith('http://') || url.startsWith('https://')) {
-            const response = await safeReq(axios.get, [url, requestOptions]);
+            const response = await safeReq(url, { method: 'get'}, 'arrayBuffer');
             return {file: [this.fileFromResponse(response, metadata)], fileContent: [response.data]};
         }
 
-        const response = await safeReq(axios.get, [this.baseUrl + url]);
+        const response = await safeReq(this.baseUrl + url, { method: 'get' }, 'text');
         const html = response.data;
 
         const $ = cheerio.load(html);
@@ -62,41 +63,42 @@ class MevzuatGovScraper extends ScraperWithPagination {
         let pdfResponse;
         if(pdf.length > 0) {
             const pdfUrl = pdf.parent().attr('href');
-            pdfResponse = await safeReq(axios.get, [pdfUrl, requestOptions] );
+            pdfResponse = await safeReq(pdfUrl, { method: 'get' }, 'arrayBuffer');
         }
 
         let wordResponse;
         if (word.length > 0) {
             const wordUrl = word.parent().attr('href');
-            wordResponse = await safeReq(axios.get, [wordUrl, requestOptions]);
+            wordResponse = await safeReq(wordUrl, { method: 'get' }, 'arrayBuffer');
         }
 
         let htmlResponse;
         try{
             const htmlUrl = this.baseUrl + $('iframe').attr('src').substring(1);
-            htmlResponse = await safeReq(axios.get, [htmlUrl, requestOptions]);
+            htmlResponse = await safeReq(htmlUrl, { method: 'get'}, 'arrayBuffer');
         }catch(e){
             console.log(e);
-            console.log('No html file found for ' + metadata)
+            console.log(html)
+            console.log('No html file found for ', metadata)
         }
 
         let sourceLastUpdated;
         let noLastUpdated = false;
-        if (pdfResponse.headers['last-modified'] !== undefined) {
-            sourceLastUpdated = new Date(pdfResponse.headers['last-modified']);
+        if (pdfResponse && pdfResponse.headers.get('last-modified') !== undefined) {
+            sourceLastUpdated = new Date(pdfResponse.headers.get('last-modified'));
         }
-        else if (wordResponse?.headers['last-modified'] !== undefined) {
-            sourceLastUpdated = new Date(wordResponse.headers['last-modified']);
+        else if (wordResponse && wordResponse.headers.get('last-modified') !== undefined) {
+            sourceLastUpdated = new Date(wordResponse.headers.get('last-modified'));
         }
         else {
             noLastUpdated = true;
         }
 
-        if(pdfResponse && pdfResponse.headers['content-type'] !== 'text/html; charset=utf-8'){
+        if(pdfResponse && pdfResponse.headers.get('content-type') !== 'text/html; charset=utf-8'){
             files.push(this.fileFromResponse(pdfResponse, metadata, sourceLastUpdated, noLastUpdated));
             fileContents.push(pdfResponse.data);
         }
-        if(wordResponse && wordResponse.headers['content-type'] !== 'text/html; charset=utf-8') {
+        if(wordResponse && wordResponse.headers.get('content-type') !== 'text/html; charset=utf-8') {
             files.push(this.fileFromResponse(wordResponse, metadata, sourceLastUpdated, noLastUpdated));
             fileContents.push(wordResponse.data);
         }
@@ -126,7 +128,9 @@ class MevzuatGovScraper extends ScraperWithPagination {
 
     //since for mevzuat we save three different file types, we need to override this method 
     async saveFile(files, document, fileContents) {
-        if (document.sourceLastUpdated >= files[0].sourceLastUpdated)
+        if (files.length === 0)
+            return;
+        if (!files[0].noLastUpdated && document.sourceLastUpdated >= files[0].sourceLastUpdated)
             return;
         try { 
             for (let [index, file] of files.entries()) {
@@ -137,16 +141,19 @@ class MevzuatGovScraper extends ScraperWithPagination {
                 await fileModel.save(); 
             }
 
-            document.sourceLastUpdated = files[0].sourceLastUpdated;
+            if(!files[0].noLastUpdated) {
+                document.sourceLastUpdated = files[0].sourceLastUpdated;
+            }
             await document.save();
         } catch (e) {
             console.error(e);
             console.log(files)
+            await document.remove();
         }
     }
 
     fileFromResponse(response, metadata, Date, noLastUpdated) {
-        return {contentType: response.headers['content-type'], metadata, sourceLastUpdated: Date, noLastUpdated : noLastUpdated};
+        return {contentType: response.headers.get('content-type'), metadata, sourceLastUpdated: Date, noLastUpdated : noLastUpdated};
     }
 }
 
